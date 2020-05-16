@@ -49,9 +49,32 @@
 )
 
 
+;; extension hooks used by subclasses
 (defmethod init (w))
 
 (defmethod cleanup (w))
+
+;; the main loop is factored out so subclasses can use :around methods
+;; to bind specials, etc around it
+(defmethod main-loop (w)
+  (init w)
+
+  ;; game loop
+  (loop
+    ;; see if we are done
+    until (window-should-close w)
+    ;; check for events and send them to ON-FOO handlers. Returns
+    ;; NIL when we should exit loop. We add a "continue" restart so
+    ;; we can keep going if an even handler errors.
+    while (with-simple-restart (continue "continue")
+            ;; use the default ON-FOO handlers so we can dispatch on
+            ;; specific keys if we want to
+            (glop:dispatch-events w))
+    do ;;; render
+       (with-simple-restart (continue "continue")
+         (draw w)))
+
+  (cleanup w))
 
 ;; main entry point
 (defun common (class)
@@ -69,24 +92,7 @@
     ;;define viewport dimensions
     (gl:viewport 0 0 (glop:window-width w) (glop:window-height w))
 
-    (init w)
-
-    ;; game loop
-    (loop
-      ;; see if we are done
-      until (window-should-close w)
-      ;; check for events and send them to ON-FOO handlers. Returns
-      ;; NIL when we should exit loop. We add a "continue" restart so
-      ;; we can keep going if an even handler errors.
-      while (with-simple-restart (continue "continue")
-              ;; use the default ON-FOO handlers so we can dispatch on
-              ;; specific keys if we want to
-              (glop:dispatch-events w))
-      do ;;; render
-         (with-simple-restart (continue "continue")
-           (draw w)))
-
-    (cleanup w)))
+    (main-loop w)))
 
 #++
 (common 'common1)
@@ -282,3 +288,53 @@
 
 (defmethod draw ((w common3))
   (%gl:draw-elements :triangles (length (ebo-data w)) :unsigned-int 0))
+
+
+;;; mixin for loading a set of textures
+
+(defclass texture-mixin ()
+  ((texture-ids :initform (make-hash-table) :reader texture-ids)
+   (textures :initarg :textures :reader textures)))
+
+(defun load-texture (filename &key (wrap-s :repeat) (wrap-t :repeat)
+                                (min :linear-mipmap-linear)
+                                (mag :linear))
+  (let ((tex (gl:gen-texture)))
+    (gl:bind-texture :texture-2d tex)
+    (gl:tex-parameter :texture-2d :texture-wrap-s wrap-s)
+    (gl:tex-parameter :texture-2d :texture-wrap-t wrap-t)
+    (gl:tex-parameter :texture-2d :texture-min-filter min)
+    (gl:tex-parameter :texture-2d :texture-mag-filter mag)
+    (format t "loading texture ~s~%" filename)
+    (let ((image #++(opticl:read-image-file
+                  (or (probe-file
+                       (asdf:system-relative-pathname :learnopengl filename))
+                      filename))))
+      (time (setf image
+                  (opticl:read-image-file
+              (or (probe-file
+                   (asdf:system-relative-pathname :learnopengl filename))
+                  filename))))
+      ;; opticl loads images into a 3d array. to send it to GL, we
+      ;; want a flat vector, ideally in form of a c-style pointer we
+      ;; can pass directly to GL.
+      (format t "uploading ~s~%" filename)
+      (time
+       (with-image-in-unsigned-bytes (image p format w h) ;; from utils.lisp
+         (gl:tex-image-2d :texture-2d 0 :rgb w h 0 format :unsigned-byte p)
+         (gl:generate-mipmap :texture-2d))))
+    (gl:bind-texture :texture-2d 0)
+    (format t "done~%")
+    tex))
+
+(defmethod init :after ((w texture-mixin))
+  (loop for (key file . options) in (textures w)
+        do (setf (gethash key (texture-ids w))
+                 (apply #'load-texture file options))))
+
+(defmethod bind-texture ((w texture-mixin) key &key (unit :texture0)
+                                            (target :texture-2d))
+  (let ((id (gethash key (texture-ids w) 0)))
+    (format t "bind ~s =~s to ~s~%" key id unit)
+    (gl:active-texture unit)
+    (gl:bind-texture target id)))

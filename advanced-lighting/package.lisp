@@ -1,6 +1,7 @@
-(defpackage learning-opengl
+(defpackage learning-opengl2
   (:use :cl)
-  (:export
+  (:import-from
+   :learning-opengl
    #:common1
    #:draw
    #:clear

@@ -3,14 +3,17 @@
 (defun radians (degrees)
   (float (* degrees (/ pi 180)) 1.0))
 
+(defun get-uniform (program name)
+  (gl:get-uniform-location
+   ;; simplify things by reusing the name
+   ;; translation from 3bgl-shaders, probably should
+   ;; be exported from there at some point
+   program (3bgl-shaders::translate-name name)))
+
 (defun get-uniforms (program names)
   (let ((h (make-hash-table)))
     (loop for name in names
-          for loc = (gl:get-uniform-location
-                     ;; simplify things by reusing the name
-                     ;; translation from 3bgl-shaders, probably should
-                     ;; be exported from there at some point
-                     program (3bgl-shaders::translate-name name))
+          for loc = (get-uniform program name)
           do (setf (gethash name h) loc))
     h))
 

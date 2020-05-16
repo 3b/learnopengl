@@ -21,4 +21,6 @@
                  (:file "camera-zoom")
                  (:file "colors-scene")
                  (:file "basic-lighting-diffuse")
-                 (:file "materials")))))
+                 (:file "materials")
+                 (:file "lighting-maps")
+                 (:file "multiple-lights")))))
